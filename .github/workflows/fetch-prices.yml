@@ -2,8 +2,17 @@ name: Fetch electricity prices
 
 on:
   schedule:
-    - cron: '0 * * * *'   # every hour
-  workflow_dispatch:        # allow manual run
+    - cron: '0 * * * *'   # every hour for today's prices
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'Fetch historical range from (YYYY-MM-DD)'
+        required: false
+        default: ''
+      date_to:
+        description: 'Fetch historical range to (YYYY-MM-DD)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -20,10 +29,57 @@ jobs:
           curl -sf "https://elektra.p5.lt/api/v2/today?apikey=${{ secrets.ELEKTRA_API_KEY || 'demo' }}" \
             -o data/today.json
 
+      - name: Fetch historical prices from Nord Pool
+        if: ${{ github.event.inputs.date_from != '' }}
+        run: |
+          mkdir -p data
+          DATE_FROM="${{ github.event.inputs.date_from }}"
+          DATE_TO="${{ github.event.inputs.date_to || github.event.inputs.date_from }}"
+          echo "Fetching $DATE_FROM to $DATE_TO"
+
+          python3 - <<'PYEOF'
+          import urllib.request, json, os
+          from datetime import date, timedelta
+
+          date_from = os.environ.get("DATE_FROM")
+          date_to   = os.environ.get("DATE_TO")
+
+          # Parse dates
+          d = date.fromisoformat(date_from)
+          end = date.fromisoformat(date_to)
+
+          all_intervals = {}
+
+          while d <= end:
+              ds = d.isoformat()
+              # Try elektra API first (today endpoint ignores date, so we use Nord Pool directly)
+              url = f"https://www.nordpoolgroup.com/api/marketdata/page/auction/day-ahead/prices?currency=EUR&aggregation=DeliveryPeriod&deliveryAreas=LT&dateFrom={ds}&dateTo={ds}"
+              req = urllib.request.Request(url, headers={
+                  "User-Agent": "Mozilla/5.0",
+                  "Accept": "application/json",
+                  "Referer": "https://www.nordpoolgroup.com/",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as r:
+                      data = json.loads(r.read())
+                  all_intervals[ds] = data
+                  print(f"  OK {ds}")
+              except Exception as e:
+                  print(f"  FAIL {ds}: {e}")
+              d += timedelta(days=1)
+
+          with open("data/historical.json", "w") as f:
+              json.dump(all_intervals, f)
+          print(f"Saved {len(all_intervals)} days to data/historical.json")
+          PYEOF
+        env:
+          DATE_FROM: ${{ github.event.inputs.date_from }}
+          DATE_TO: ${{ github.event.inputs.date_to }}
+
       - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/today.json
+          git add data/
           git diff --cached --quiet || git commit -m "chore: update price data"
           git push
