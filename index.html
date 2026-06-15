@@ -204,25 +204,28 @@
         .map((iv, i) => ({ price: parseFloat(iv.price), idx: i }))
         .sort((a, b) => a.price - b.price);
 
-      // Charging: cheapest intervals first, limited by charger power and battery capacity
-      let batteryStored = 0;
-      const chargeAmount = new Array(intervals.length).fill(0); // kWh drawn from grid to charge
-      for (const iv of sorted) {
-        if (batteryStored >= batteryKwh) break;
-        const canCharge = Math.min(maxChargePerInterval, batteryKwh - batteryStored);
-        chargeAmount[iv.idx] = canCharge;          // grid draw for charging
-        batteryStored += canCharge * efficiency;   // what actually goes into battery
-      }
-
-      // Discharging: most expensive intervals first, limited by battery and consumption
-      let batteryLeft = batteryStored;
-      const dischargeAmount = new Array(intervals.length).fill(0); // kWh supplied from battery
+      // Pass 1 — Discharging: pick most expensive intervals first, limited by consumption and battery capacity
+      const dischargeAmount = new Array(intervals.length).fill(0);
+      let dischargeNeeded = 0;
       for (const iv of [...sorted].reverse()) {
-        if (batteryLeft <= 0) break;
-        if (chargeAmount[iv.idx] > 0) continue; // don't discharge during charging intervals
-        const canDischarge = Math.min(consumption[iv.idx], batteryLeft);
+        if (dischargeNeeded >= batteryKwh) break;
+        const canDischarge = Math.min(consumption[iv.idx], batteryKwh - dischargeNeeded);
         dischargeAmount[iv.idx] = canDischarge;
-        batteryLeft -= canDischarge;
+        dischargeNeeded += canDischarge;
+      }
+      // How much the battery must store (accounting for efficiency losses on charge side)
+      const mustStore = dischargeNeeded; // kWh needed out of battery
+      const mustCharge = mustStore / efficiency; // kWh to draw from grid
+
+      // Pass 2 — Charging: cheapest intervals first, only charge what we'll actually use
+      let gridDrawLeft = mustCharge;
+      const chargeAmount = new Array(intervals.length).fill(0);
+      for (const iv of sorted) {
+        if (gridDrawLeft <= 0) break;
+        if (dischargeAmount[iv.idx] > 0) continue; // don't charge during discharge intervals
+        const canCharge = Math.min(maxChargePerInterval, gridDrawLeft);
+        chargeAmount[iv.idx] = canCharge;
+        gridDrawLeft -= canCharge;
       }
 
       // Cost calculation
