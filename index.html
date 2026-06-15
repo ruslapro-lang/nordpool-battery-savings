@@ -131,7 +131,7 @@
 
       try {
         const res = await fetch(`data/today.json?_=${Date.now()}`);
-        if (!res.ok) throw new Error('Price data not available yet — check back in a few minutes');
+        if (!res.ok) throw new Error(`HTTP ${res.status} — try refreshing the page in a moment`);
         const data = await res.json();
         intervals = data.intervals || [];
         if (!intervals.length) throw new Error('No intervals in response');
