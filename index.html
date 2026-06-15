@@ -28,12 +28,18 @@
     </div>
 
     <!-- Config sliders -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Battery capacity: <span id="batteryVal" class="text-indigo-600 font-semibold">10 kWh</span></label>
         <input id="battery" type="range" min="1" max="50" value="10" step="1" class="w-full" oninput="updateLabels(); recalculate()" />
         <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kWh</span><span>50 kWh</span></div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Charger power: <span id="chargePowerVal" class="text-indigo-600 font-semibold">3 kW</span></label>
+        <input id="chargePower" type="range" min="1" max="15" value="3" step="0.5" class="w-full" oninput="updateLabels(); recalculate()" />
+        <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kW</span><span>15 kW</span></div>
       </div>
 
       <div>
@@ -120,6 +126,7 @@
 
     function updateLabels() {
       document.getElementById('batteryVal').textContent = document.getElementById('battery').value + ' kWh';
+      document.getElementById('chargePowerVal').textContent = document.getElementById('chargePower').value + ' kW';
       document.getElementById('consumptionVal').textContent = document.getElementById('consumption').value + ' kWh';
       document.getElementById('efficiencyVal').textContent = document.getElementById('efficiency').value + '%';
     }
@@ -146,20 +153,22 @@
     function recalculate() {
       if (!intervals.length) return;
 
-      const batteryKwh = parseFloat(document.getElementById('battery').value);
-      const dailyKwh   = parseFloat(document.getElementById('consumption').value);
-      const efficiency = parseFloat(document.getElementById('efficiency').value) / 100;
+      const batteryKwh  = parseFloat(document.getElementById('battery').value);
+      const chargePower = parseFloat(document.getElementById('chargePower').value);
+      const dailyKwh    = parseFloat(document.getElementById('consumption').value);
+      const efficiency  = parseFloat(document.getElementById('efficiency').value) / 100;
       const perInterval = dailyKwh / intervals.length; // kWh consumed each 15-min slot
+      const maxChargePerInterval = chargePower * 0.25; // kW × 0.25 h = kWh per 15-min slot
 
       // Sort by price to find cheapest/most expensive
-      const sorted = [...intervals].map((iv, i) => ({ ...iv, idx: i })).sort((a, b) => a.price - b.price);
+      const sorted = [...intervals].map((iv, i) => ({ ...iv, idx: i })).sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
 
-      // Charging: fill battery from cheapest intervals
+      // Charging: fill battery from cheapest intervals, limited by charger power
       let batteryStored = 0;
       const charging = new Set();
       for (const iv of sorted) {
         if (batteryStored >= batteryKwh) break;
-        const canCharge = Math.min(perInterval, batteryKwh - batteryStored);
+        const canCharge = Math.min(maxChargePerInterval, batteryKwh - batteryStored);
         batteryStored += canCharge * efficiency;
         charging.add(iv.idx);
       }
