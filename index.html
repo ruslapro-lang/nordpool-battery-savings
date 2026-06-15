@@ -132,7 +132,8 @@
       status.textContent = 'Loading…';
 
       try {
-        const res = await fetch(`https://corsproxy.io/?url=https://elektra.p5.lt/api/v2/today?apikey=${apiKey}`);
+        const target = encodeURIComponent(`https://elektra.p5.lt/api/v2/today?apikey=${apiKey}`);
+        const res = await fetch(`https://api.allorigins.win/raw?url=${target}`);
         if (!res.ok) throw new Error('API error ' + res.status);
         const data = await res.json();
         intervals = data.intervals || [];
@@ -182,7 +183,7 @@
       let baselineCost = 0;
       let batteryCost  = 0;
       intervals.forEach((iv, i) => {
-        const price = iv.price / 1000; // API returns €/MWh → convert to €/kWh
+        const price = parseFloat(iv.price); // API returns €/MWh → convert to €/kWh
         baselineCost += perInterval * price;
         if (discharging.has(i)) {
           // Using battery — no grid cost this interval
@@ -212,7 +213,7 @@
         const t = iv.startTimeLocal || iv.startTimeUTC || '';
         return t.slice(11, 16); // HH:MM
       });
-      const prices = intervals.map(iv => (iv.price / 1000).toFixed(4));
+      const prices = intervals.map(iv => (parseFloat(iv.price)).toFixed(4));
       const colors = intervals.map((_, i) => {
         if (charging.has(i))    return 'rgba(52, 211, 153, 0.8)';   // green
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.8)';  // red
