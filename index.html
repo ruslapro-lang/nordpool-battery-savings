@@ -132,7 +132,7 @@
       status.textContent = 'Loading…';
 
       try {
-        const res = await fetch(`https://elektra.p5.lt/api/v2/today?apikey=${apiKey}`);
+        const res = await fetch(`https://corsproxy.io/?url=https://elektra.p5.lt/api/v2/today?apikey=${apiKey}`);
         if (!res.ok) throw new Error('API error ' + res.status);
         const data = await res.json();
         intervals = data.intervals || [];
