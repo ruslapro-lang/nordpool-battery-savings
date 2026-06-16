@@ -62,7 +62,7 @@ jobs:
               )
               try:
                   with urllib.request.urlopen(url, timeout=15) as r:
-                      root = ET.fromstring(r.read())
+                      root = ET.fromstring(r.read().decode("utf-8-sig"))
                   intervals = []
                   for period in root.findall(f".//{{{NS}}}Period"):
                       res = period.findtext(f"{{{NS}}}resolution", "PT60M")
