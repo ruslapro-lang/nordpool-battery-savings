@@ -468,10 +468,7 @@
         // Price chart with today's prices + avg profile for battery strategy visualisation
         const todayPrices = todayIntervals.map(iv => parseFloat(iv.price));
         const todayResult = calcDaySavings(todayPrices, avgProfile, batteryKwh, maxChargePerInterval, efficiency);
-        drawPriceChart(
-          new Set(todayResult.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0)),
-          new Set(todayResult.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0))
-        );
+        drawPriceChart(todayResult.charge, todayResult.discharge, batteryKwh, efficiency);
 
       } else {
         // === TODAY-ONLY MODE ===
@@ -509,7 +506,7 @@
 
         const chargingSet    = new Set(res.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
         const dischargingSet = new Set(res.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-        drawPriceChart(chargingSet, dischargingSet);
+        drawPriceChart(res.charge, res.discharge, batteryKwh, efficiency);
         drawConsumptionChart(consumption, chargingSet, dischargingSet);
       }
     }
@@ -535,7 +532,10 @@
       };
     }
 
-    function drawPriceChart(charging, discharging) {
+    function drawPriceChart(chargeArr, dischargeArr, batteryKwh, efficiency) {
+      const charging    = new Set(chargeArr.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+      const discharging = new Set(dischargeArr.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+
       const prices = Array.from({length: 96}, (_, i) => {
         const iv = todayIntervals[i];
         return iv ? (parseFloat(iv.price) * 100).toFixed(2) : null;
@@ -545,11 +545,88 @@
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.85)';
         return 'rgba(165, 180, 252, 0.6)';
       });
+
+      // Compute state of charge per slot (kWh stored in battery)
+      const soc = [];
+      let level = 0;
+      for (let i = 0; i < 96; i++) {
+        level += chargeArr[i] * efficiency;  // energy stored = grid draw × efficiency
+        level -= dischargeArr[i];            // energy taken from battery
+        level = Math.max(0, Math.min(batteryKwh, level));
+        soc.push(parseFloat(level.toFixed(3)));
+      }
+
       if (priceChart) priceChart.destroy();
       priceChart = new Chart(document.getElementById('priceChart'), {
         type: 'bar',
-        data: { labels: TIME_LABELS, datasets: [{ data: prices, backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
-        options: chartOptions(v => v + ' ct', ctx => ctx.parsed.y + ' ct/kWh · ' + (TIME_LABELS[ctx.dataIndex] || ''))
+        data: {
+          labels: TIME_LABELS,
+          datasets: [
+            {
+              type: 'bar',
+              data: prices,
+              backgroundColor: colors,
+              borderRadius: 2,
+              borderSkipped: false,
+              yAxisID: 'y',
+              order: 2
+            },
+            {
+              type: 'line',
+              label: 'Battery charge',
+              data: soc,
+              borderColor: 'rgba(251, 191, 36, 0.9)',
+              backgroundColor: 'rgba(251, 191, 36, 0.15)',
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              fill: true,
+              tension: 0.3,
+              yAxisID: 'y2',
+              order: 1
+            }
+          ]
+        },
+        options: {
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                filter: item => item.datasetIndex === 1,
+                color: '#92400e',
+                font: { size: 11 }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  if (ctx.datasetIndex === 0) return ctx.parsed.y + ' ct/kWh';
+                  return 'Battery: ' + ctx.parsed.y + ' kWh';
+                },
+                title: ctx => TIME_LABELS[ctx[0].dataIndex] || ''
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: false, callback: (val, idx) => TIME_LABELS[idx] || null },
+              grid: { display: false }
+            },
+            y: {
+              position: 'left',
+              ticks: { font: { size: 11 }, callback: v => v + ' ct' },
+              grid: { color: '#f3f4f6' }
+            },
+            y2: {
+              position: 'right',
+              min: 0,
+              max: batteryKwh,
+              ticks: { font: { size: 11 }, callback: v => v + ' kWh' },
+              grid: { display: false }
+            }
+          }
+        }
       });
     }
 
