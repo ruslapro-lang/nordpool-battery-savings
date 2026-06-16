@@ -40,15 +40,21 @@
         <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">2</span>
         <div>
           <h2 class="font-semibold text-gray-800">Upload your meter consumption data <span class="text-gray-400 font-normal text-sm">(optional — but recommended)</span></h2>
-          <p class="text-xs text-gray-400 mt-0.5">Export 15-min interval data from your electricity provider (ESO / Ignitis portal). Remove personal details before uploading — only the timestamp and kWh columns are needed.</p>
+          <p class="text-xs text-gray-400 mt-0.5">Export 15-min interval data from ESO or Ignitis self-service portal. <strong class="text-gray-500">Personal data is stripped automatically</strong> — only timestamps and kWh values are read. Nothing is uploaded anywhere; all processing happens in your browser.</p>
         </div>
       </div>
-      <div class="flex items-center gap-4 flex-wrap ml-10">
+      <div class="flex items-center gap-4 flex-wrap ml-10 mb-3">
         <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition">
           Choose CSV file
           <input type="file" accept=".csv" class="hidden" onchange="loadCSV(this)" />
         </label>
         <span id="csvStatus" class="text-sm text-gray-400">No file selected — a typical household profile will be used instead</span>
+      </div>
+      <!-- Privacy detail panel, shown after load -->
+      <div id="privacyPanel" class="hidden ml-10 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
+        <div class="font-semibold text-blue-800">What was read from your file:</div>
+        <div id="privacyKept"></div>
+        <div id="privacyDropped" class="text-blue-500"></div>
       </div>
     </div>
 
@@ -229,7 +235,8 @@
       if (!file) return;
       const status = document.getElementById('csvStatus');
       status.className = 'text-sm text-indigo-500';
-      status.textContent = 'Reading…';
+      status.textContent = 'Reading and stripping personal data…';
+      document.getElementById('privacyPanel').classList.add('hidden');
       const reader = new FileReader();
       reader.onload = e => {
         try {
@@ -238,6 +245,8 @@
           const dtCol  = header.findIndex(h => h.includes('Data') || h.includes('valanda'));
           const kwhCol = header.findIndex(h => h.includes('Kiekis') || h.includes('kWh'));
           if (dtCol < 0 || kwhCol < 0) throw new Error('Cannot find timestamp or kWh columns in the file');
+
+          const droppedCols = header.filter((_, i) => i !== dtCol && i !== kwhCol);
 
           csvDayData = {};
           const slotSum   = new Array(96).fill(0);
@@ -262,8 +271,19 @@
           avgProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
           const totalDays = Object.keys(csvDayData).length;
           const dailyKwh  = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
+
           status.className = 'text-sm font-medium text-emerald-600';
           status.textContent = `✓ Loaded ${totalDays} days · average ${dailyKwh} kWh/day`;
+
+          // Show privacy panel
+          const panel = document.getElementById('privacyPanel');
+          document.getElementById('privacyKept').textContent =
+            `✓ Used: "${header[dtCol]}" (timestamp) and "${header[kwhCol]}" (kWh) — ${(lines.length - 1).toLocaleString()} rows processed`;
+          document.getElementById('privacyDropped').textContent = droppedCols.length
+            ? `✗ Discarded without reading: ${droppedCols.map(c => `"${c}"`).join(', ')}`
+            : '✓ No other columns were present in the file';
+          panel.classList.remove('hidden');
+
           tryShowResults();
         } catch (err) {
           status.className = 'text-sm font-medium text-red-600';
