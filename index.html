@@ -332,6 +332,17 @@
       recalculate();
     }
 
+    // Build a 96-element price array from a historical day array, keyed by slot number.
+    // ENTSO-E sometimes returns overlapping periods → duplicate slot entries.
+    // Accessing by array index instead of slot number causes slots 48-95 to read as 0.
+    function slotPrices(dayArray) {
+      const map = {};
+      for (const entry of dayArray) {
+        if (!(entry.slot in map)) map[entry.slot] = entry.price;
+      }
+      return Array.from({length: 96}, (_, i) => map[i] ?? 0);
+    }
+
     function calcDaySavings(prices96, consumption96, batteryKwh, maxChargePerInterval, efficiency) {
       const sorted = prices96.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
       const discharge = new Array(96).fill(0);
@@ -369,7 +380,7 @@
       for (let cap = 1; cap <= 50; cap++) {
         let total = 0;
         for (const day of days) {
-          const p96 = Array.from({length: 96}, (_, i) => pricesByDay[day][i]?.price ?? 0);
+          const p96 = slotPrices(pricesByDay[day]);
           total += calcDaySavings(p96, consumptionByDay[day], cap, maxCharge, efficiency).saving;
         }
         savings.push({ cap, avgDaily: total / days.length });
@@ -405,7 +416,7 @@
         const dailySavings = [];
 
         for (const day of matchedDays.sort()) {
-          const p96  = Array.from({length: 96}, (_, i) => historicalPrices[day][i]?.price ?? 0);
+          const p96  = slotPrices(historicalPrices[day]);
           const c96  = csvDayData[day];
           const res  = calcDaySavings(p96, c96, batteryKwh, maxChargePerInterval, efficiency);
           totalBaseline += res.baseline;
