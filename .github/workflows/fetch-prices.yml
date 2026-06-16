@@ -1,0 +1,93 @@
+name: Fetch electricity prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'Historical range from (YYYY-MM-DD)'
+        required: false
+        default: ''
+      date_to:
+        description: 'Historical range to (YYYY-MM-DD)'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 * * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch today's prices
+        run: |
+          mkdir -p data
+          curl -sf "https://elektra.p5.lt/api/v2/today?apikey=demo" -o data/today.json
+
+      - name: Fetch historical prices from ENTSO-E
+        if: ${{ github.event.inputs.date_from != '' }}
+        env:
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
+          DATE_FROM: ${{ github.event.inputs.date_from }}
+          DATE_TO: ${{ github.event.inputs.date_to }}
+        run: |
+          python3 << 'PYEOF'
+          import urllib.request, json, os, xml.etree.ElementTree as ET
+          from datetime import date, timedelta
+
+          token     = os.environ["ENTSOE_TOKEN"]
+          date_from = os.environ["DATE_FROM"]
+          date_to   = os.environ.get("DATE_TO") or date_from
+          d, end    = date.fromisoformat(date_from), date.fromisoformat(date_to)
+
+          out_path = "data/historical.json"
+          try:
+              with open(out_path) as f: all_days = json.load(f)
+          except Exception: all_days = {}
+
+          NS = "urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:3"
+
+          while d <= end:
+              ds = d.isoformat()
+              url = (
+                  "https://web-api.tp.entsoe.eu/api"
+                  f"?securityToken={token}&documentType=A44"
+                  "&in_Domain=10YLT-1001A0008Q&out_Domain=10YLT-1001A0008Q"
+                  f"&periodStart={d.strftime('%Y%m%d0000')}"
+                  f"&periodEnd={(d+timedelta(days=1)).strftime('%Y%m%d0000')}"
+              )
+              try:
+                  with urllib.request.urlopen(url, timeout=15) as r:
+                      root = ET.fromstring(r.read())
+                  intervals = []
+                  for period in root.findall(f".//{{{NS}}}Period"):
+                      res = period.findtext(f"{{{NS}}}resolution", "PT60M")
+                      for pt in period.findall(f"{{{NS}}}Point"):
+                          pos   = int(pt.findtext(f"{{{NS}}}position", "0"))
+                          price = round(float(pt.findtext(f"{{{NS}}}price.amount", "0")) / 1000, 6)
+                          slots = 1 if res == "PT15M" else 4
+                          base  = (pos - 1) * slots
+                          for q in range(slots):
+                              intervals.append({"slot": base + q, "price": price})
+                  intervals.sort(key=lambda x: x["slot"])
+                  all_days[ds] = intervals
+                  print(f"  OK {ds}: {len(intervals)} slots")
+              except Exception as e:
+                  print(f"  FAIL {ds}: {e}")
+              d += timedelta(days=1)
+
+          with open(out_path, "w") as f: json.dump(all_days, f)
+          print(f"Done: {len(all_days)} days saved")
+          PYEOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "chore: update price data"
+          git push
