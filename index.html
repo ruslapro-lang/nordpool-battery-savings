@@ -345,24 +345,40 @@
 
     function calcDaySavings(prices96, consumption96, batteryKwh, maxChargePerInterval, efficiency) {
       const sorted = prices96.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+
+      // Charger can only fill this much energy into the battery per day
+      const maxDailyCharge = 96 * maxChargePerInterval * efficiency;
+      // Effective usable capacity is limited by charger speed, not just battery size
+      const effectiveCap = Math.min(batteryKwh, maxDailyCharge);
+
+      // Pre-reserve the cheapest slots for charging so discharge never claims them.
+      // Without this, a large battery discharges every slot, leaving nowhere to charge.
+      const slotsNeeded = Math.min(96, Math.ceil(effectiveCap / efficiency / maxChargePerInterval));
+      const chargingReserved = new Set(sorted.slice(0, slotsNeeded).map(s => s.i));
+
+      // Pass 1: discharge at most expensive slots, skipping reserved charging slots
       const discharge = new Array(96).fill(0);
       let needed = 0;
       for (const { i } of [...sorted].reverse()) {
-        if (needed >= batteryKwh) break;
-        const amt = Math.min(consumption96[i], batteryKwh - needed);
+        if (needed >= effectiveCap) break;
+        if (chargingReserved.has(i)) continue;
+        const amt = Math.min(consumption96[i], effectiveCap - needed);
         discharge[i] = amt;
         needed += amt;
       }
+
+      // Pass 2: charge only at reserved cheap slots
       const mustCharge = needed / efficiency;
       let left = mustCharge;
       const charge = new Array(96).fill(0);
       for (const { i } of sorted) {
         if (left <= 0) break;
-        if (discharge[i] > 0) continue;
+        if (!chargingReserved.has(i)) break; // all remaining slots are more expensive
         const amt = Math.min(maxChargePerInterval, left);
         charge[i] = amt;
         left -= amt;
       }
+
       let baseline = 0, battery = 0;
       for (let i = 0; i < 96; i++) {
         baseline += consumption96[i] * prices96[i];
