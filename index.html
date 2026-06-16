@@ -21,40 +21,42 @@
       <p class="text-gray-500 mt-2 max-w-xl mx-auto">Calculate how much you could save by charging a home battery when Nordpool electricity is cheap, and using it when prices peak. Upload your real meter data for precise results.</p>
     </div>
 
-    <!-- Step 1: Load prices -->
+    <!-- Step 1: Consumption CSV -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
       <div class="flex items-center gap-3 mb-3">
         <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">1</span>
         <div>
-          <h2 class="font-semibold text-gray-800">Load electricity prices</h2>
-          <p class="text-xs text-gray-400 mt-0.5">Fetches today's Nordpool LT prices and historical data for matching with your consumption</p>
-        </div>
-      </div>
-      <button onclick="loadPrices()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition">Load Prices</button>
-      <span id="priceStatus" class="ml-3 text-sm text-gray-400"></span>
-    </div>
-
-    <!-- Step 2: Consumption CSV -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
-      <div class="flex items-center gap-3 mb-3">
-        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">2</span>
-        <div>
-          <h2 class="font-semibold text-gray-800">Upload your meter consumption data <span class="text-gray-400 font-normal text-sm">(optional — but recommended)</span></h2>
-          <p class="text-xs text-gray-400 mt-0.5">Export 15-min interval data from ESO or Ignitis self-service portal. <strong class="text-gray-500">Personal data is stripped automatically</strong> — only timestamps and kWh values are read. Nothing is uploaded anywhere; all processing happens in your browser.</p>
+          <h2 class="font-semibold text-gray-800">Upload your meter consumption data</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Export 15-min interval data from your ESO or Ignitis self-service portal. <strong class="text-gray-500">Personal data is stripped automatically</strong> — only timestamps and kWh values are read. Nothing is uploaded anywhere; all processing happens in your browser.</p>
         </div>
       </div>
       <div class="flex items-center gap-4 flex-wrap ml-10 mb-3">
-        <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition">
+        <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition cursor-pointer">
           Choose CSV file
           <input type="file" accept=".csv" class="hidden" onchange="loadCSV(this)" />
         </label>
-        <span id="csvStatus" class="text-sm text-gray-400">No file selected — a typical household profile will be used instead</span>
+        <span id="csvStatus" class="text-sm text-gray-400">No file selected yet</span>
       </div>
       <!-- Privacy detail panel, shown after load -->
       <div id="privacyPanel" class="hidden ml-10 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
         <div class="font-semibold text-blue-800">What was read from your file:</div>
         <div id="privacyKept"></div>
         <div id="privacyDropped" class="text-blue-500"></div>
+      </div>
+    </div>
+
+    <!-- Step 2: Load prices -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">2</span>
+        <div>
+          <h2 class="font-semibold text-gray-800">Load Nordpool electricity prices</h2>
+          <p class="text-xs text-gray-400 mt-0.5" id="priceStepHint">Upload your consumption file first — prices will be loaded for that exact period automatically.</p>
+        </div>
+      </div>
+      <div class="ml-10">
+        <button id="loadPricesBtn" onclick="loadPrices()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition">Load Prices</button>
+        <span id="priceStatus" class="ml-3 text-sm text-gray-400"></span>
       </div>
     </div>
 
@@ -175,7 +177,7 @@
     <div id="emptyState" class="text-center text-gray-400 py-20">
       <div class="text-6xl mb-4">🔋</div>
       <p class="text-lg font-medium text-gray-500">Ready to calculate your savings</p>
-      <p class="text-sm mt-1">Click <strong>Load Prices</strong> above to fetch today's Nordpool data and begin.</p>
+      <p class="text-sm mt-1">Start by uploading your meter consumption CSV in <strong>Step 1</strong>.</p>
     </div>
 
   </div>
@@ -187,6 +189,8 @@
     let avgProfile       = null;
     let consumptionChart = null;
     let priceChart       = null;
+    let csvDateFrom      = null;
+    let csvDateTo        = null;
 
     // Time labels for 96 slots: show only whole hours
     function makeTimeLabels() {
@@ -206,6 +210,7 @@
 
     async function loadPrices() {
       const status = document.getElementById('priceStatus');
+      status.className = 'ml-3 text-sm text-indigo-500';
       status.textContent = 'Loading…';
       try {
         const [todayRes, histRes] = await Promise.all([
@@ -219,13 +224,34 @@
 
         if (histRes.ok) {
           historicalPrices = await histRes.json();
-          const days = Object.keys(historicalPrices).length;
-          status.textContent = `✓ Today's prices loaded · ${days} days of historical Nordpool data available`;
+          const allDays = Object.keys(historicalPrices).sort();
+
+          if (csvDateFrom && csvDateTo) {
+            // Report coverage for the uploaded CSV's period
+            const csvDays   = Object.keys(csvDayData).sort();
+            const matched   = csvDays.filter(d => historicalPrices[d]);
+            const missing   = csvDays.filter(d => !historicalPrices[d]);
+            if (matched.length === csvDays.length) {
+              status.className = 'ml-3 text-sm font-medium text-emerald-600';
+              status.textContent = `✓ Prices loaded for all ${matched.length} days (${csvDateFrom} – ${csvDateTo})`;
+            } else if (matched.length > 0) {
+              status.className = 'ml-3 text-sm font-medium text-amber-600';
+              status.textContent = `⚠ Prices found for ${matched.length} of ${csvDays.length} days — ${missing.length} days missing (${missing[0]}…)`;
+            } else {
+              status.className = 'ml-3 text-sm font-medium text-red-600';
+              status.textContent = `✗ No prices found for ${csvDateFrom} – ${csvDateTo}. This period may not be loaded yet.`;
+            }
+          } else {
+            status.className = 'ml-3 text-sm font-medium text-emerald-600';
+            status.textContent = `✓ Today's prices loaded · ${allDays.length} days of historical data available (${allDays[0]} – ${allDays[allDays.length - 1]})`;
+          }
         } else {
+          status.className = 'ml-3 text-sm font-medium text-emerald-600';
           status.textContent = `✓ Today's prices loaded`;
         }
         tryShowResults();
       } catch (e) {
+        status.className = 'ml-3 text-sm font-medium text-red-600';
         status.textContent = '✗ ' + e.message;
       }
     }
@@ -269,20 +295,26 @@
           }
 
           avgProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
-          const totalDays = Object.keys(csvDayData).length;
-          const dailyKwh  = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
+          const sortedDays = Object.keys(csvDayData).sort();
+          const totalDays  = sortedDays.length;
+          const dailyKwh   = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
+          csvDateFrom = sortedDays[0];
+          csvDateTo   = sortedDays[totalDays - 1];
 
           status.className = 'text-sm font-medium text-emerald-600';
-          status.textContent = `✓ Loaded ${totalDays} days · average ${dailyKwh} kWh/day`;
+          status.textContent = `✓ Loaded ${totalDays} days · ${csvDateFrom} – ${csvDateTo} · average ${dailyKwh} kWh/day`;
 
           // Show privacy panel
-          const panel = document.getElementById('privacyPanel');
           document.getElementById('privacyKept').textContent =
             `✓ Used: "${header[dtCol]}" (timestamp) and "${header[kwhCol]}" (kWh) — ${(lines.length - 1).toLocaleString()} rows processed`;
           document.getElementById('privacyDropped').textContent = droppedCols.length
             ? `✗ Discarded without reading: ${droppedCols.map(c => `"${c}"`).join(', ')}`
             : '✓ No other columns were present in the file';
-          panel.classList.remove('hidden');
+          document.getElementById('privacyPanel').classList.remove('hidden');
+
+          // Update Step 2 hint to show the detected period
+          document.getElementById('priceStepHint').textContent =
+            `Prices will be loaded for your consumption period: ${csvDateFrom} – ${csvDateTo}.`;
 
           tryShowResults();
         } catch (err) {
