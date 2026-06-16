@@ -154,41 +154,40 @@
   </div>
 
   <script>
-    let intervals = [];
-    let consumptionProfile = null; // 96-element array of kWh per slot, or null = use default
+    let todayIntervals  = [];   // [{price, startTimeLocal, ...}] from today.json
+    let historicalPrices = {};  // {"2026-03-01": [{slot, price}, ...]}
+    let csvDayData       = {};  // {"2026-03-01": Float32Array(96)} real per-slot kWh
+    let avgProfile       = null; // 96-slot average across all CSV days
     let consumptionChart = null;
     let priceChart = null;
-
-    // Default: typical Lithuanian household evening-peak profile (weights, sum=96 for easy scaling)
-    const DEFAULT_PROFILE_WEIGHTS = [
-      0.3,0.3,0.2,0.2,0.2,0.2, 0.2,0.3,0.3,0.3, // 00:00-02:30
-      0.3,0.3,0.3,0.3,0.3,0.3, 0.3,0.3,0.3,0.3, // 02:30-05:00
-      0.3,0.4,0.5,0.6,0.7,0.8, 0.9,1.0,1.0,0.9, // 05:00-07:30
-      0.8,0.7,0.6,0.5,0.5,0.5, 0.5,0.5,0.5,0.5, // 07:30-10:00
-      0.5,0.5,0.5,0.6,0.6,0.6, 0.6,0.6,0.6,0.6, // 10:00-12:30
-      0.6,0.6,0.6,0.6,0.6,0.6, 0.7,0.7,0.8,0.9, // 12:30-15:00
-      1.0,1.1,1.2,1.4,1.6,1.8, 2.0,2.2,2.4,2.5, // 15:00-17:30
-      2.5,2.4,2.3,2.2,2.1,2.0, 1.9,1.8,1.6,1.4, // 17:30-20:00
-      1.2,1.0,0.9,0.8,0.7,0.6, 0.5,0.5,0.4,0.4, // 20:00-22:30
-      0.4,0.3,0.3,0.3,0.3,0.3                     // 22:30-24:00
-    ];
+    let savingsChart = null;
 
     function updateLabels() {
-      document.getElementById('batteryVal').textContent    = document.getElementById('battery').value + ' kWh';
+      document.getElementById('batteryVal').textContent     = document.getElementById('battery').value + ' kWh';
       document.getElementById('chargePowerVal').textContent = document.getElementById('chargePower').value + ' kW';
-      document.getElementById('efficiencyVal').textContent = document.getElementById('efficiency').value + '%';
+      document.getElementById('efficiencyVal').textContent  = document.getElementById('efficiency').value + '%';
     }
 
     async function loadPrices() {
       const status = document.getElementById('priceStatus');
       status.textContent = 'Loading…';
       try {
-        const res = await fetch(`data/today.json?_=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} — try refreshing in a moment`);
-        const data = await res.json();
-        intervals = data.intervals || [];
-        if (!intervals.length) throw new Error('No intervals in response');
-        status.textContent = `✓ ${intervals.length} intervals for ${data.date}`;
+        const [todayRes, histRes] = await Promise.all([
+          fetch(`data/today.json?_=${Date.now()}`),
+          fetch(`data/historical.json?_=${Date.now()}`)
+        ]);
+        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
+        const today = await todayRes.json();
+        todayIntervals = today.intervals || [];
+        if (!todayIntervals.length) throw new Error('No price intervals');
+
+        if (histRes.ok) {
+          historicalPrices = await histRes.json();
+          const days = Object.keys(historicalPrices).length;
+          status.textContent = `✓ Today's prices loaded · ${days} days of historical data available`;
+        } else {
+          status.textContent = `✓ Today's prices loaded (no historical data yet)`;
+        }
         tryShowResults();
       } catch (e) {
         status.textContent = '✗ ' + e.message;
@@ -209,7 +208,7 @@
           const kwhCol = header.findIndex(h => h.includes('Kiekis') || h.includes('kWh'));
           if (dtCol < 0 || kwhCol < 0) throw new Error('Could not find required columns');
 
-          // Accumulate kWh per 15-min slot index (0–95) across all days
+          csvDayData = {};
           const slotSum   = new Array(96).fill(0);
           const slotCount = new Array(96).fill(0);
 
@@ -218,19 +217,22 @@
             const dt   = cols[dtCol];
             const kwh  = parseFloat(cols[kwhCol].replace(',', '.'));
             if (!dt || isNaN(kwh)) continue;
-            // Parse HH:MM from ISO timestamp
+
+            const dateStr  = dt.includes('T') ? dt.split('T')[0] : dt.slice(0, 10);
             const timePart = dt.includes('T') ? dt.split('T')[1] : dt;
             const [hh, mm] = timePart.split(':').map(Number);
             const slot = hh * 4 + Math.floor(mm / 15);
-            if (slot >= 0 && slot < 96) {
-              slotSum[slot]   += kwh;
-              slotCount[slot] += 1;
-            }
+            if (slot < 0 || slot >= 96) continue;
+
+            if (!csvDayData[dateStr]) csvDayData[dateStr] = new Array(96).fill(0);
+            csvDayData[dateStr][slot] = kwh;
+            slotSum[slot]   += kwh;
+            slotCount[slot] += 1;
           }
 
-          consumptionProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
-          const totalDays = Math.max(...slotCount);
-          const dailyKwh  = consumptionProfile.reduce((a, b) => a + b, 0).toFixed(1);
+          avgProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
+          const totalDays = Object.keys(csvDayData).length;
+          const dailyKwh  = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
           status.textContent = `✓ ${file.name} · ${totalDays} days · avg ${dailyKwh} kWh/day`;
           tryShowResults();
         } catch (err) {
@@ -240,93 +242,132 @@
       reader.readAsText(file, 'UTF-8');
     }
 
-    function getConsumption() {
-      if (consumptionProfile) return consumptionProfile;
-      // Default profile scaled to a reasonable daily total
-      const weights = DEFAULT_PROFILE_WEIGHTS;
-      const total   = weights.reduce((a, b) => a + b, 0);
-      const dailyKwh = 15;
-      return weights.map(w => (w / total) * dailyKwh);
-    }
-
     function tryShowResults() {
-      if (!intervals.length) return;
+      if (!todayIntervals.length) return;
       document.getElementById('results').classList.remove('hidden');
       document.getElementById('emptyState').classList.add('hidden');
       recalculate();
     }
 
+    // Core per-day savings algorithm
+    function calcDaySavings(prices96, consumption96, batteryKwh, maxChargePerInterval, efficiency) {
+      const sorted = prices96.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+
+      const discharge = new Array(96).fill(0);
+      let needed = 0;
+      for (const { p, i } of [...sorted].reverse()) {
+        if (needed >= batteryKwh) break;
+        const amt = Math.min(consumption96[i], batteryKwh - needed);
+        discharge[i] = amt;
+        needed += amt;
+      }
+
+      const mustCharge = needed / efficiency;
+      let left = mustCharge;
+      const charge = new Array(96).fill(0);
+      for (const { p, i } of sorted) {
+        if (left <= 0) break;
+        if (discharge[i] > 0) continue;
+        const amt = Math.min(maxChargePerInterval, left);
+        charge[i] = amt;
+        left -= amt;
+      }
+
+      let baseline = 0, battery = 0;
+      for (let i = 0; i < 96; i++) {
+        baseline += consumption96[i] * prices96[i];
+        battery  += (consumption96[i] - discharge[i] + charge[i]) * prices96[i];
+      }
+      return { baseline, battery, saving: baseline - battery, charge, discharge };
+    }
+
     function recalculate() {
-      if (!intervals.length) return;
+      if (!todayIntervals.length) return;
 
       const batteryKwh           = parseFloat(document.getElementById('battery').value);
       const chargePower          = parseFloat(document.getElementById('chargePower').value);
       const efficiency           = parseFloat(document.getElementById('efficiency').value) / 100;
       const maxChargePerInterval = chargePower * 0.25;
 
-      const consumption = getConsumption();
-      const dailyKwh    = consumption.reduce((a, b) => a + b, 0);
-      const peakKw      = Math.max(...consumption) * 4; // kWh per 15min → kW
+      // --- Historical analysis (CSV + historical prices) ---
+      const csvDays   = Object.keys(csvDayData);
+      const matchedDays = csvDays.filter(d => historicalPrices[d]);
 
-      // Sort intervals cheapest → most expensive
-      const sorted = [...intervals]
-        .map((iv, i) => ({ price: parseFloat(iv.price), idx: i }))
-        .sort((a, b) => a.price - b.price);
+      if (matchedDays.length > 0) {
+        let totalBaseline = 0, totalBattery = 0;
+        const dailySavings = [];
 
-      // Pass 1 — Discharging: most expensive intervals first, capped by consumption & battery
-      const dischargeAmount = new Array(intervals.length).fill(0);
-      let dischargeNeeded   = 0;
-      for (const iv of [...sorted].reverse()) {
-        if (dischargeNeeded >= batteryKwh) break;
-        const canDischarge = Math.min(consumption[iv.idx], batteryKwh - dischargeNeeded);
-        dischargeAmount[iv.idx] = canDischarge;
-        dischargeNeeded += canDischarge;
+        for (const day of matchedDays.sort()) {
+          const prices96      = historicalPrices[day].map(s => s.price);
+          const consumption96 = csvDayData[day];
+          // Pad to 96 if ENTSO-E returned more/fewer
+          const p96 = Array.from({length: 96}, (_, i) => prices96[i] ?? prices96[prices96.length - 1] ?? 0);
+          const res = calcDaySavings(p96, consumption96, batteryKwh, maxChargePerInterval, efficiency);
+          totalBaseline += res.baseline;
+          totalBattery  += res.battery;
+          dailySavings.push({ day, saving: res.saving });
+        }
+
+        const totalSaving = totalBaseline - totalBattery;
+        const pct = totalBaseline > 0 ? (totalSaving / totalBaseline * 100) : 0;
+        const avgDaily = totalSaving / matchedDays.length;
+        const totalDailyKwh = matchedDays.reduce((s, d) => s + csvDayData[d].reduce((a, b) => a + b, 0), 0) / matchedDays.length;
+        const peakKw = Math.max(...matchedDays.flatMap(d => csvDayData[d])) * 4;
+
+        document.getElementById('baselineCost').textContent = '€' + totalBaseline.toFixed(2);
+        document.getElementById('batteryCost').textContent  = '€' + totalBattery.toFixed(2);
+        document.getElementById('saving').textContent       = '€' + totalSaving.toFixed(2);
+        document.getElementById('savingPct').textContent    = pct.toFixed(1) + `% saved · ${matchedDays.length} days`;
+        document.getElementById('statDailyKwh').textContent = totalDailyKwh.toFixed(1) + ' kWh';
+        document.getElementById('statPeak').textContent     = peakKw.toFixed(2) + ' kW';
+        document.getElementById('statCoverage').textContent = '€' + avgDaily.toFixed(2) + '/day';
+        document.getElementById('annualSaving').textContent = '€' + (avgDaily * 365).toFixed(0) + '/year';
+
+        document.getElementById('consumptionChartLabel').textContent =
+          `Real savings per day · ${matchedDays.length} days of actual data matched with historical prices`;
+        drawSavingsChart(dailySavings);
+
+        // Also show today's price chart with avg profile
+        const todayPrices = todayIntervals.map(iv => parseFloat(iv.price));
+        const todayResult = calcDaySavings(todayPrices, avgProfile, batteryKwh, maxChargePerInterval, efficiency);
+        const chargingSet    = new Set(todayResult.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+        const dischargingSet = new Set(todayResult.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+        drawPriceChart(chargingSet, dischargingSet);
+        return;
       }
 
-      // Pass 2 — Charging: cheapest intervals, only enough to cover planned discharge
-      const mustCharge  = dischargeNeeded / efficiency;
-      let gridDrawLeft  = mustCharge;
-      const chargeAmount = new Array(intervals.length).fill(0);
-      for (const iv of sorted) {
-        if (gridDrawLeft <= 0) break;
-        if (dischargeAmount[iv.idx] > 0) continue;
-        const canCharge = Math.min(maxChargePerInterval, gridDrawLeft);
-        chargeAmount[iv.idx] = canCharge;
-        gridDrawLeft -= canCharge;
-      }
+      // --- Today-only mode (no CSV or no matching historical prices) ---
+      const consumption = avgProfile || (() => {
+        const w = [0.3,0.3,0.2,0.2,0.2,0.2,0.2,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.7,0.7,0.8,0.9,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.5,2.5,2.4,2.3,2.2,2.1,2.0,1.9,1.8,1.6,1.4,1.2,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.4,0.4,0.4,0.3,0.3,0.3,0.3,0.3];
+        const t = w.reduce((a, b) => a + b, 0);
+        return w.map(v => (v / t) * 15);
+      })();
 
-      // Cost calculation
-      let baselineCost = 0;
-      let batteryCost  = 0;
-      intervals.forEach((iv, i) => {
-        const price = parseFloat(iv.price);
-        baselineCost += consumption[i] * price;
-        batteryCost  += (consumption[i] - dischargeAmount[i] + chargeAmount[i]) * price;
-      });
+      const prices = todayIntervals.map(iv => parseFloat(iv.price));
+      const res = calcDaySavings(prices, consumption, batteryKwh, maxChargePerInterval, efficiency);
+      const pct = res.baseline > 0 ? (res.saving / res.baseline * 100) : 0;
+      const dailyKwh = consumption.reduce((a, b) => a + b, 0);
+      const peakKw   = Math.max(...consumption) * 4;
 
-      const saving  = baselineCost - batteryCost;
-      const pct     = baselineCost > 0 ? (saving / baselineCost * 100) : 0;
-      const coverage = dailyKwh > 0 ? Math.min(100, (dischargeNeeded / dailyKwh) * 100) : 0;
-
-      document.getElementById('baselineCost').textContent = '€' + baselineCost.toFixed(2);
-      document.getElementById('batteryCost').textContent  = '€' + batteryCost.toFixed(2);
-      document.getElementById('saving').textContent       = '€' + saving.toFixed(2);
+      document.getElementById('baselineCost').textContent = '€' + res.baseline.toFixed(2);
+      document.getElementById('batteryCost').textContent  = '€' + res.battery.toFixed(2);
+      document.getElementById('saving').textContent       = '€' + res.saving.toFixed(2);
       document.getElementById('savingPct').textContent    = pct.toFixed(1) + '% saved per day';
       document.getElementById('statDailyKwh').textContent = dailyKwh.toFixed(1) + ' kWh';
       document.getElementById('statPeak').textContent     = peakKw.toFixed(2) + ' kW';
-      document.getElementById('statCoverage').textContent = coverage.toFixed(0) + '% of day';
-      document.getElementById('annualSaving').textContent = '€' + (saving * 365).toFixed(0) + '/year';
+      document.getElementById('statCoverage').textContent = avgProfile ? 'from your CSV' : 'default profile';
+      document.getElementById('annualSaving').textContent = '€' + (res.saving * 365).toFixed(0) + '/year';
 
-      const charging    = new Set(chargeAmount.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-      const discharging = new Set(dischargeAmount.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-      drawPriceChart(charging, discharging);
-      drawConsumptionChart(consumption, charging, discharging);
+      const chargingSet    = new Set(res.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+      const dischargingSet = new Set(res.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+      drawPriceChart(chargingSet, dischargingSet);
+      drawConsumptionChart(consumption, chargingSet, dischargingSet);
     }
 
     function drawPriceChart(charging, discharging) {
-      const labels = intervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
-      const prices = intervals.map(iv => (parseFloat(iv.price) * 100).toFixed(2));
-      const colors = intervals.map((_, i) => {
+      const labels = todayIntervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
+      const prices = todayIntervals.map(iv => (parseFloat(iv.price) * 100).toFixed(2));
+      const colors = todayIntervals.map((_, i) => {
         if (charging.has(i))    return 'rgba(52, 211, 153, 0.85)';
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.85)';
         return 'rgba(165, 180, 252, 0.6)';
@@ -345,15 +386,33 @@
       });
     }
 
+    function drawSavingsChart(dailySavings) {
+      const labels = dailySavings.map(d => d.day.slice(5)); // MM-DD
+      const data   = dailySavings.map(d => d.saving.toFixed(3));
+      const colors = dailySavings.map(d => d.saving >= 0 ? 'rgba(52, 211, 153, 0.8)' : 'rgba(248, 113, 113, 0.8)');
+      if (consumptionChart) consumptionChart.destroy();
+      consumptionChart = new Chart(document.getElementById('consumptionChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
+        options: {
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => '€' + ctx.parsed.y + ' saved' } } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 16, font: { size: 11 } }, grid: { display: false } },
+            y: { ticks: { font: { size: 11 }, callback: v => '€' + v }, grid: { color: '#f3f4f6' } }
+          }
+        }
+      });
+    }
+
     function drawConsumptionChart(consumption, charging, discharging) {
-      const labels = intervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
+      const labels = todayIntervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
       const colors = consumption.map((_, i) => {
         if (charging.has(i))    return 'rgba(52, 211, 153, 0.75)';
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.75)';
         return 'rgba(99, 102, 241, 0.5)';
       });
-      const source = consumptionProfile ? 'Based on your uploaded data (average across all days)' : 'Using default evening-peak profile — upload your CSV for accurate results';
-      document.getElementById('consumptionChartLabel').textContent = source;
+      document.getElementById('consumptionChartLabel').textContent =
+        avgProfile ? 'Average consumption from uploaded CSV' : 'Default evening-peak profile — upload your CSV for accurate results';
       if (consumptionChart) consumptionChart.destroy();
       consumptionChart = new Chart(document.getElementById('consumptionChart'), {
         type: 'bar',
