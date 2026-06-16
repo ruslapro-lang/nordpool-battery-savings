@@ -446,8 +446,12 @@
         const avgDailyKwh  = matchedDays.reduce((s, d) => s + csvDayData[d].reduce((a, b) => a + b, 0), 0) / matchedDays.length;
         const peakKw       = Math.max(...matchedDays.flatMap(d => csvDayData[d])) * 4;
 
+        const periodLabel = csvDateFrom && csvDateTo
+          ? `${csvDateFrom} – ${csvDateTo}`
+          : `${matchedDays[0]} – ${matchedDays[matchedDays.length - 1]}`;
+
         document.getElementById('labelBaseline').textContent    = 'Total cost without battery';
-        document.getElementById('sublabelBaseline').textContent = `over ${matchedDays.length} days · Mar 2026`;
+        document.getElementById('sublabelBaseline').textContent = `${matchedDays.length} days · ${periodLabel}`;
         document.getElementById('labelBattery').textContent     = 'Total cost with battery';
         document.getElementById('sublabelBattery').textContent  = `${batteryKwh} kWh · ${chargePower} kW charger`;
         document.getElementById('baselineCost').textContent     = '€' + totalBaseline.toFixed(2);
@@ -478,7 +482,7 @@
         }
 
         document.getElementById('chart2Title').textContent  = 'Savings per day (€) — actual consumption × actual Nordpool prices';
-        document.getElementById('chart2Label').textContent  = `Each bar = one day in March 2026. Taller bar = bigger price spread that day between cheap and expensive hours.`;
+        document.getElementById('chart2Label').textContent  = `Each bar = one day in ${periodLabel}. Taller bar = bigger price spread that day between cheap and expensive hours.`;
         drawSavingsChart(dailySavings);
 
         // Price chart with today's prices + avg profile for battery strategy visualisation
