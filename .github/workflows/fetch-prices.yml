@@ -29,52 +29,89 @@ jobs:
           curl -sf "https://elektra.p5.lt/api/v2/today?apikey=${{ secrets.ELEKTRA_API_KEY || 'demo' }}" \
             -o data/today.json
 
-      - name: Fetch historical prices from Nord Pool
+      - name: Fetch historical prices from ENTSO-E
         if: ${{ github.event.inputs.date_from != '' }}
-        run: |
-          mkdir -p data
-          DATE_FROM="${{ github.event.inputs.date_from }}"
-          DATE_TO="${{ github.event.inputs.date_to || github.event.inputs.date_from }}"
-          echo "Fetching $DATE_FROM to $DATE_TO"
-
-          python3 - <<'PYEOF'
-          import urllib.request, json, os
-          from datetime import date, timedelta
-
-          date_from = os.environ.get("DATE_FROM")
-          date_to   = os.environ.get("DATE_TO")
-
-          # Parse dates
-          d = date.fromisoformat(date_from)
-          end = date.fromisoformat(date_to)
-
-          all_intervals = {}
-
-          while d <= end:
-              ds = d.isoformat()
-              # Try elektra API first (today endpoint ignores date, so we use Nord Pool directly)
-              url = f"https://www.nordpoolgroup.com/api/marketdata/page/auction/day-ahead/prices?currency=EUR&aggregation=DeliveryPeriod&deliveryAreas=LT&dateFrom={ds}&dateTo={ds}"
-              req = urllib.request.Request(url, headers={
-                  "User-Agent": "Mozilla/5.0",
-                  "Accept": "application/json",
-                  "Referer": "https://www.nordpoolgroup.com/",
-              })
-              try:
-                  with urllib.request.urlopen(req, timeout=10) as r:
-                      data = json.loads(r.read())
-                  all_intervals[ds] = data
-                  print(f"  OK {ds}")
-              except Exception as e:
-                  print(f"  FAIL {ds}: {e}")
-              d += timedelta(days=1)
-
-          with open("data/historical.json", "w") as f:
-              json.dump(all_intervals, f)
-          print(f"Saved {len(all_intervals)} days to data/historical.json")
-          PYEOF
         env:
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
           DATE_FROM: ${{ github.event.inputs.date_from }}
           DATE_TO: ${{ github.event.inputs.date_to }}
+        run: |
+          python3 - <<'PYEOF'
+import urllib.request, json, os, xml.etree.ElementTree as ET
+from datetime import date, timedelta
+
+token    = os.environ["ENTSOE_TOKEN"]
+date_from = os.environ["DATE_FROM"]
+date_to   = os.environ.get("DATE_TO") or date_from
+
+d   = date.fromisoformat(date_from)
+end = date.fromisoformat(date_to)
+
+# Load existing data if any
+out_path = "data/historical.json"
+try:
+    with open(out_path) as f:
+        all_days = json.load(f)
+except Exception:
+    all_days = {}
+
+NS = "urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:3"
+
+while d <= end:
+    ds = d.isoformat()
+    period_start = d.strftime("%Y%m%d0000")
+    period_end   = (d + timedelta(days=1)).strftime("%Y%m%d0000")
+
+    url = (
+        "https://web-api.tp.entsoe.eu/api"
+        f"?securityToken={token}"
+        "&documentType=A44"
+        "&in_Domain=10YLT-1001A0008Q"
+        "&out_Domain=10YLT-1001A0008Q"
+        f"&periodStart={period_start}"
+        f"&periodEnd={period_end}"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            xml_data = r.read()
+
+        root = ET.fromstring(xml_data)
+        intervals = []
+        for ts in root.findall(f".//{{{NS}}}TimeSeries"):
+            resolution = ts.findtext(f".//{{{NS}}}resolution", "")
+            # Only 15-min (PT15M) or 60-min (PT60M) resolutions
+            for period in ts.findall(f".//{{{NS}}}Period"):
+                res = period.findtext(f"{{{NS}}}resolution") or resolution
+                start_str = period.findtext(f"{{{NS}}}timeInterval/{{{NS}}}start") or ""
+                for pt in period.findall(f"{{{NS}}}Point"):
+                    pos   = int(pt.findtext(f"{{{NS}}}position", "0"))
+                    price = float(pt.findtext(f"{{{NS}}}price.amount", "0"))
+                    # Convert from EUR/MWh → EUR/kWh
+                    price_kwh = round(price / 1000, 6)
+                    minutes = (pos - 1) * (15 if res == "PT15M" else 60)
+                    intervals.append({"slot": pos - 1, "price": price_kwh, "res": res})
+
+        # If hourly, expand to 15-min slots
+        expanded = []
+        for iv in intervals:
+            if iv["res"] == "PT60M":
+                for q in range(4):
+                    expanded.append({"slot": iv["slot"] * 4 + q, "price": iv["price"]})
+            else:
+                expanded.append({"slot": iv["slot"], "price": iv["price"]})
+
+        expanded.sort(key=lambda x: x["slot"])
+        all_days[ds] = [{"slot": iv["slot"], "price": iv["price"]} for iv in expanded]
+        print(f"  OK {ds}: {len(expanded)} intervals")
+    except Exception as e:
+        print(f"  FAIL {ds}: {e}")
+
+    d += timedelta(days=1)
+
+with open(out_path, "w") as f:
+    json.dump(all_days, f)
+print(f"Saved {len(all_days)} days to {out_path}")
+PYEOF
 
       - name: Commit if changed
         run: |
