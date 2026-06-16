@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Battery Savings Calculator</title>
+  <title>Home Battery Savings Calculator</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -17,15 +17,18 @@
 
     <!-- Header -->
     <div class="mb-8 text-center">
-      <h1 class="text-3xl font-bold text-gray-900">⚡ Battery Savings Calculator</h1>
-      <p class="text-gray-500 mt-2">Upload your real consumption data and today's prices to find out exactly how much a home battery could save you.</p>
+      <h1 class="text-3xl font-bold text-gray-900">Home Battery Savings Calculator</h1>
+      <p class="text-gray-500 mt-2 max-w-xl mx-auto">Calculate how much you could save by charging a home battery when Nordpool electricity is cheap, and using it when prices peak. Upload your real meter data for precise results.</p>
     </div>
 
-    <!-- Step 1: Prices -->
+    <!-- Step 1: Load prices -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
-      <div class="flex items-center gap-3 mb-4">
-        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center">1</span>
-        <h2 class="font-semibold text-gray-800">Load today's electricity prices</h2>
+      <div class="flex items-center gap-3 mb-3">
+        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">1</span>
+        <div>
+          <h2 class="font-semibold text-gray-800">Load electricity prices</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Fetches today's Nordpool LT prices and historical data for matching with your consumption</p>
+        </div>
       </div>
       <button onclick="loadPrices()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition">Load Prices</button>
       <span id="priceStatus" class="ml-3 text-sm text-gray-400"></span>
@@ -33,46 +36,47 @@
 
     <!-- Step 2: Consumption CSV -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
-      <div class="flex items-center gap-3 mb-1">
-        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center">2</span>
-        <h2 class="font-semibold text-gray-800">Upload your consumption data <span class="text-gray-400 font-normal text-sm">(optional)</span></h2>
+      <div class="flex items-center gap-3 mb-3">
+        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">2</span>
+        <div>
+          <h2 class="font-semibold text-gray-800">Upload your meter consumption data <span class="text-gray-400 font-normal text-sm">(optional — but recommended)</span></h2>
+          <p class="text-xs text-gray-400 mt-0.5">Export 15-min interval data from your electricity provider (ESO / Ignitis portal). Remove personal details before uploading — only the timestamp and kWh columns are needed.</p>
+        </div>
       </div>
-      <p class="text-xs text-gray-400 mb-3 ml-10">Export from your electricity provider (ESO / Ignitis). The file must have a <code class="bg-gray-100 px-1 rounded">Data, valanda</code> and <code class="bg-gray-100 px-1 rounded">Kiekis, kWh</code> column, semicolon-separated. Personal data should be removed before uploading.</p>
-      <div class="ml-10 flex items-center gap-4 flex-wrap">
+      <div class="flex items-center gap-4 flex-wrap ml-10">
         <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition">
           Choose CSV file
           <input type="file" accept=".csv" class="hidden" onchange="loadCSV(this)" />
         </label>
-        <span id="csvStatus" class="text-sm text-gray-400">No file chosen — using default profile</span>
+        <span id="csvStatus" class="text-sm text-gray-400">No file — calculations will use a typical household profile</span>
       </div>
     </div>
 
     <!-- Step 3: Battery config -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
       <div class="flex items-center gap-3 mb-4">
-        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center">3</span>
-        <h2 class="font-semibold text-gray-800">Configure your battery</h2>
+        <span class="w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">3</span>
+        <div>
+          <h2 class="font-semibold text-gray-800">Set battery parameters</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Adjust to match the battery system you're considering buying</p>
+        </div>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Battery capacity: <span id="batteryVal" class="text-indigo-600 font-semibold">10 kWh</span></label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Storage capacity: <span id="batteryVal" class="text-indigo-600 font-semibold">10 kWh</span></label>
           <input id="battery" type="range" min="1" max="50" value="10" step="1" class="w-full" oninput="updateLabels(); recalculate()" />
-          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kWh</span><span>50 kWh</span></div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kWh (small)</span><span>50 kWh (large)</span></div>
         </div>
-
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Charger power: <span id="chargePowerVal" class="text-indigo-600 font-semibold">3 kW</span></label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Charging power: <span id="chargePowerVal" class="text-indigo-600 font-semibold">3 kW</span></label>
           <input id="chargePower" type="range" min="1" max="15" value="3" step="0.5" class="w-full" oninput="updateLabels(); recalculate()" />
-          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kW</span><span>15 kW</span></div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 kW (slow)</span><span>15 kW (fast)</span></div>
         </div>
-
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Charge efficiency: <span id="efficiencyVal" class="text-indigo-600 font-semibold">90%</span></label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Round-trip efficiency: <span id="efficiencyVal" class="text-indigo-600 font-semibold">90%</span></label>
           <input id="efficiency" type="range" min="70" max="99" value="90" step="1" class="w-full" oninput="updateLabels(); recalculate()" />
-          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>70%</span><span>99%</span></div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1"><span>70% (older tech)</span><span>99% (ideal)</span></div>
         </div>
-
       </div>
     </div>
 
@@ -80,87 +84,113 @@
     <div id="results" class="hidden">
 
       <!-- Summary cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 text-center">
-          <div class="text-sm text-gray-500 mb-1">Without battery</div>
+          <div class="text-sm text-gray-500 mb-1" id="labelBaseline">Electricity cost without battery</div>
           <div id="baselineCost" class="text-2xl font-bold text-gray-900">—</div>
-          <div class="text-xs text-gray-400 mt-1">today's grid cost</div>
+          <div id="sublabelBaseline" class="text-xs text-gray-400 mt-1">paying full grid price every interval</div>
         </div>
         <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 text-center">
-          <div class="text-sm text-gray-500 mb-1">With battery</div>
+          <div class="text-sm text-gray-500 mb-1" id="labelBattery">Electricity cost with battery</div>
           <div id="batteryCost" class="text-2xl font-bold text-indigo-600">—</div>
-          <div class="text-xs text-gray-400 mt-1">estimated cost</div>
+          <div id="sublabelBattery" class="text-xs text-gray-400 mt-1">using stored cheap energy at peak hours</div>
         </div>
         <div class="bg-emerald-50 rounded-2xl shadow-sm border border-emerald-200 p-5 text-center">
-          <div class="text-sm text-emerald-700 mb-1">You save</div>
+          <div class="text-sm text-emerald-700 mb-1">Savings</div>
           <div id="saving" class="text-2xl font-bold text-emerald-600">—</div>
-          <div id="savingPct" class="text-xs text-emerald-500 mt-1">per day</div>
+          <div id="savingPct" class="text-xs text-emerald-500 mt-1">—</div>
         </div>
       </div>
 
       <!-- Stats row -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
         <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div class="text-xs text-gray-400 mb-1">Avg daily use</div>
+          <div class="text-xs text-gray-400 mb-1">Average daily usage</div>
           <div id="statDailyKwh" class="text-lg font-bold text-gray-800">—</div>
         </div>
         <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div class="text-xs text-gray-400 mb-1">Peak demand</div>
+          <div class="text-xs text-gray-400 mb-1">Peak 15-min draw</div>
           <div id="statPeak" class="text-lg font-bold text-gray-800">—</div>
         </div>
         <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div class="text-xs text-gray-400 mb-1">Battery covers</div>
+          <div class="text-xs text-gray-400 mb-1" id="statCoverageLabel">Avg daily saving</div>
           <div id="statCoverage" class="text-lg font-bold text-gray-800">—</div>
         </div>
         <div class="bg-emerald-50 rounded-xl border border-emerald-200 p-4 text-center">
-          <div class="text-xs text-emerald-600 mb-1">Annual saving</div>
+          <div class="text-xs text-emerald-600 mb-1">Projected annual saving</div>
           <div id="annualSaving" class="text-lg font-bold text-emerald-700">—</div>
+        </div>
+      </div>
+
+      <!-- Battery recommendation -->
+      <div id="recommendation" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-4">
+        <div class="flex items-start gap-3">
+          <div class="text-2xl">💡</div>
+          <div>
+            <div class="font-semibold text-amber-900 mb-1">Recommended battery size for your household</div>
+            <div id="recommendationText" class="text-sm text-amber-800"></div>
+          </div>
         </div>
       </div>
 
       <!-- Price chart -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-4">
-        <h2 class="text-sm font-semibold text-gray-700 mb-1">Today's electricity price (ct/kWh) · 15-min intervals</h2>
-        <p class="text-xs text-gray-400 mb-4">Green = battery charging · Red = battery discharging · Purple = normal grid use</p>
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Today's Nordpool electricity price — Lithuania (ct/kWh)</h2>
+        <p class="text-xs text-gray-400 mb-4">
+          <span class="inline-flex items-center gap-1 mr-3"><span class="inline-block w-3 h-3 rounded-sm bg-emerald-400"></span> Battery charges (cheapest hours)</span>
+          <span class="inline-flex items-center gap-1 mr-3"><span class="inline-block w-3 h-3 rounded-sm bg-red-400"></span> Battery discharges (most expensive hours)</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm bg-indigo-200"></span> Normal grid purchase</span>
+        </p>
         <canvas id="priceChart" height="110"></canvas>
       </div>
 
-      <!-- Consumption chart -->
+      <!-- Second chart — savings or consumption -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
-        <h2 class="text-sm font-semibold text-gray-700 mb-1">Your average consumption (kWh per 15 min)</h2>
-        <p id="consumptionChartLabel" class="text-xs text-gray-400 mb-4"></p>
+        <h2 id="chart2Title" class="text-sm font-semibold text-gray-700 mb-1">Your average consumption profile (kWh per 15-min slot)</h2>
+        <p id="chart2Label" class="text-xs text-gray-400 mb-4"></p>
         <canvas id="consumptionChart" height="110"></canvas>
       </div>
 
       <!-- How it works -->
       <details class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <summary class="cursor-pointer text-sm font-semibold text-gray-700">How is this calculated?</summary>
+        <summary class="cursor-pointer text-sm font-semibold text-gray-700">How the calculation works</summary>
         <div class="mt-3 text-sm text-gray-600 space-y-2">
-          <p>When you upload a CSV, the calculator averages your actual consumption across all days to build a typical 15-minute profile.</p>
-          <p>The battery charges during the cheapest intervals (limited by charger power). It discharges during the most expensive intervals where you actually have consumption — it only charges as much as it can usefully discharge.</p>
-          <p>Savings = baseline grid cost − grid cost with battery (charging cost included).</p>
-          <p class="text-gray-400 text-xs">Prices from elektra.p5.lt · Nordpool Lithuania · VAT not included</p>
+          <p><strong>With your CSV uploaded:</strong> each day's actual 15-minute consumption is matched to that day's real Nordpool prices from ENTSO-E. Savings are calculated day by day and summed.</p>
+          <p><strong>Without CSV:</strong> a typical Lithuanian household evening-peak profile is used with today's prices.</p>
+          <p><strong>Strategy:</strong> the battery charges during the cheapest available intervals (limited by charger power). It discharges during the most expensive intervals — but only when you actually have consumption at that time. The battery never charges more than it can usefully discharge.</p>
+          <p><strong>Formula:</strong> Saving = Σ(consumption × grid price) − Σ((consumption − discharge + charge) × price). Charging cost is fully included.</p>
+          <p class="text-gray-400 text-xs pt-1">Spot prices from ENTSO-E Transparency Platform (no VAT, no grid fees, no supplier margin). Your actual bill savings will differ — spot price contracts pass these savings through; fixed-rate contracts do not.</p>
         </div>
       </details>
 
     </div>
 
     <!-- Empty state -->
-    <div id="emptyState" class="text-center text-gray-400 py-16">
-      <div class="text-5xl mb-4">🔋</div>
-      <p>Load today's prices to get started.</p>
+    <div id="emptyState" class="text-center text-gray-400 py-20">
+      <div class="text-6xl mb-4">🔋</div>
+      <p class="text-lg font-medium text-gray-500">Ready to calculate your savings</p>
+      <p class="text-sm mt-1">Click <strong>Load Prices</strong> above to fetch today's Nordpool data and begin.</p>
     </div>
 
   </div>
 
   <script>
-    let todayIntervals  = [];   // [{price, startTimeLocal, ...}] from today.json
-    let historicalPrices = {};  // {"2026-03-01": [{slot, price}, ...]}
-    let csvDayData       = {};  // {"2026-03-01": Float32Array(96)} real per-slot kWh
-    let avgProfile       = null; // 96-slot average across all CSV days
+    let todayIntervals   = [];
+    let historicalPrices = {};
+    let csvDayData       = {};
+    let avgProfile       = null;
     let consumptionChart = null;
-    let priceChart = null;
-    let savingsChart = null;
+    let priceChart       = null;
+
+    // Time labels for 96 slots: show only whole hours
+    function makeTimeLabels() {
+      return Array.from({length: 96}, (_, i) => {
+        const h = Math.floor(i / 4);
+        const m = (i % 4) * 15;
+        return (i % 4 === 0) ? `${String(h).padStart(2,'0')}:00` : '';
+      });
+    }
+    const TIME_LABELS = makeTimeLabels();
 
     function updateLabels() {
       document.getElementById('batteryVal').textContent     = document.getElementById('battery').value + ' kWh';
@@ -176,17 +206,17 @@
           fetch(`data/today.json?_=${Date.now()}`),
           fetch(`data/historical.json?_=${Date.now()}`)
         ]);
-        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status}`);
+        if (!todayRes.ok) throw new Error(`HTTP ${todayRes.status} — try refreshing in a moment`);
         const today = await todayRes.json();
         todayIntervals = today.intervals || [];
-        if (!todayIntervals.length) throw new Error('No price intervals');
+        if (!todayIntervals.length) throw new Error('No price intervals returned');
 
         if (histRes.ok) {
           historicalPrices = await histRes.json();
           const days = Object.keys(historicalPrices).length;
-          status.textContent = `✓ Today's prices loaded · ${days} days of historical data available`;
+          status.textContent = `✓ Today's prices loaded · ${days} days of historical Nordpool data available`;
         } else {
-          status.textContent = `✓ Today's prices loaded (no historical data yet)`;
+          status.textContent = `✓ Today's prices loaded`;
         }
         tryShowResults();
       } catch (e) {
@@ -206,7 +236,7 @@
           const header = lines[0].split(';').map(h => h.replace(/"/g, '').trim());
           const dtCol  = header.findIndex(h => h.includes('Data') || h.includes('valanda'));
           const kwhCol = header.findIndex(h => h.includes('Kiekis') || h.includes('kWh'));
-          if (dtCol < 0 || kwhCol < 0) throw new Error('Could not find required columns');
+          if (dtCol < 0 || kwhCol < 0) throw new Error('Cannot find timestamp or kWh columns in the file');
 
           csvDayData = {};
           const slotSum   = new Array(96).fill(0);
@@ -217,13 +247,11 @@
             const dt   = cols[dtCol];
             const kwh  = parseFloat(cols[kwhCol].replace(',', '.'));
             if (!dt || isNaN(kwh)) continue;
-
             const dateStr  = dt.includes('T') ? dt.split('T')[0] : dt.slice(0, 10);
             const timePart = dt.includes('T') ? dt.split('T')[1] : dt;
             const [hh, mm] = timePart.split(':').map(Number);
             const slot = hh * 4 + Math.floor(mm / 15);
             if (slot < 0 || slot >= 96) continue;
-
             if (!csvDayData[dateStr]) csvDayData[dateStr] = new Array(96).fill(0);
             csvDayData[dateStr][slot] = kwh;
             slotSum[slot]   += kwh;
@@ -233,7 +261,7 @@
           avgProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
           const totalDays = Object.keys(csvDayData).length;
           const dailyKwh  = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
-          status.textContent = `✓ ${file.name} · ${totalDays} days · avg ${dailyKwh} kWh/day`;
+          status.textContent = `✓ ${file.name} — ${totalDays} days, average ${dailyKwh} kWh/day`;
           tryShowResults();
         } catch (err) {
           status.textContent = '✗ ' + err.message;
@@ -249,36 +277,60 @@
       recalculate();
     }
 
-    // Core per-day savings algorithm
     function calcDaySavings(prices96, consumption96, batteryKwh, maxChargePerInterval, efficiency) {
       const sorted = prices96.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
-
       const discharge = new Array(96).fill(0);
       let needed = 0;
-      for (const { p, i } of [...sorted].reverse()) {
+      for (const { i } of [...sorted].reverse()) {
         if (needed >= batteryKwh) break;
         const amt = Math.min(consumption96[i], batteryKwh - needed);
         discharge[i] = amt;
         needed += amt;
       }
-
       const mustCharge = needed / efficiency;
       let left = mustCharge;
       const charge = new Array(96).fill(0);
-      for (const { p, i } of sorted) {
+      for (const { i } of sorted) {
         if (left <= 0) break;
         if (discharge[i] > 0) continue;
         const amt = Math.min(maxChargePerInterval, left);
         charge[i] = amt;
         left -= amt;
       }
-
       let baseline = 0, battery = 0;
       for (let i = 0; i < 96; i++) {
         baseline += consumption96[i] * prices96[i];
         battery  += (consumption96[i] - discharge[i] + charge[i]) * prices96[i];
       }
       return { baseline, battery, saving: baseline - battery, charge, discharge };
+    }
+
+    function findOptimalBattery(pricesByDay, consumptionByDay, chargePower, efficiency) {
+      const maxCharge = chargePower * 0.25;
+      const days = Object.keys(pricesByDay).filter(d => consumptionByDay[d]);
+      if (!days.length) return null;
+
+      const savings = [];
+      for (let cap = 1; cap <= 50; cap++) {
+        let total = 0;
+        for (const day of days) {
+          const p96 = Array.from({length: 96}, (_, i) => pricesByDay[day][i]?.price ?? 0);
+          total += calcDaySavings(p96, consumptionByDay[day], cap, maxCharge, efficiency).saving;
+        }
+        savings.push({ cap, avgDaily: total / days.length });
+      }
+
+      // Find the knee: first point where adding 1 kWh gives < 5% of the gain adding from 1→2 gave
+      const baseGain = savings[1].avgDaily - savings[0].avgDaily;
+      let recommended = savings[savings.length - 1].cap;
+      for (let i = 1; i < savings.length - 1; i++) {
+        const marginalGain = savings[i + 1].avgDaily - savings[i].avgDaily;
+        if (baseGain > 0 && marginalGain / baseGain < 0.05) {
+          recommended = savings[i].cap;
+          break;
+        }
+      }
+      return { recommended, savings };
     }
 
     function recalculate() {
@@ -289,85 +341,140 @@
       const efficiency           = parseFloat(document.getElementById('efficiency').value) / 100;
       const maxChargePerInterval = chargePower * 0.25;
 
-      // --- Historical analysis (CSV + historical prices) ---
-      const csvDays   = Object.keys(csvDayData);
+      const csvDays     = Object.keys(csvDayData);
       const matchedDays = csvDays.filter(d => historicalPrices[d]);
 
       if (matchedDays.length > 0) {
+        // === HISTORICAL MODE ===
         let totalBaseline = 0, totalBattery = 0;
         const dailySavings = [];
 
         for (const day of matchedDays.sort()) {
-          const prices96      = historicalPrices[day].map(s => s.price);
-          const consumption96 = csvDayData[day];
-          // Pad to 96 if ENTSO-E returned more/fewer
-          const p96 = Array.from({length: 96}, (_, i) => prices96[i] ?? prices96[prices96.length - 1] ?? 0);
-          const res = calcDaySavings(p96, consumption96, batteryKwh, maxChargePerInterval, efficiency);
+          const p96  = Array.from({length: 96}, (_, i) => historicalPrices[day][i]?.price ?? 0);
+          const c96  = csvDayData[day];
+          const res  = calcDaySavings(p96, c96, batteryKwh, maxChargePerInterval, efficiency);
           totalBaseline += res.baseline;
           totalBattery  += res.battery;
-          dailySavings.push({ day, saving: res.saving });
+          dailySavings.push({ day, saving: res.saving, baseline: res.baseline });
         }
 
-        const totalSaving = totalBaseline - totalBattery;
-        const pct = totalBaseline > 0 ? (totalSaving / totalBaseline * 100) : 0;
-        const avgDaily = totalSaving / matchedDays.length;
-        const totalDailyKwh = matchedDays.reduce((s, d) => s + csvDayData[d].reduce((a, b) => a + b, 0), 0) / matchedDays.length;
-        const peakKw = Math.max(...matchedDays.flatMap(d => csvDayData[d])) * 4;
+        const totalSaving  = totalBaseline - totalBattery;
+        const pct          = totalBaseline > 0 ? (totalSaving / totalBaseline * 100) : 0;
+        const avgDaily     = totalSaving / matchedDays.length;
+        const avgDailyKwh  = matchedDays.reduce((s, d) => s + csvDayData[d].reduce((a, b) => a + b, 0), 0) / matchedDays.length;
+        const peakKw       = Math.max(...matchedDays.flatMap(d => csvDayData[d])) * 4;
 
-        document.getElementById('baselineCost').textContent = '€' + totalBaseline.toFixed(2);
-        document.getElementById('batteryCost').textContent  = '€' + totalBattery.toFixed(2);
-        document.getElementById('saving').textContent       = '€' + totalSaving.toFixed(2);
-        document.getElementById('savingPct').textContent    = pct.toFixed(1) + `% saved · ${matchedDays.length} days`;
-        document.getElementById('statDailyKwh').textContent = totalDailyKwh.toFixed(1) + ' kWh';
-        document.getElementById('statPeak').textContent     = peakKw.toFixed(2) + ' kW';
-        document.getElementById('statCoverage').textContent = '€' + avgDaily.toFixed(2) + '/day';
-        document.getElementById('annualSaving').textContent = '€' + (avgDaily * 365).toFixed(0) + '/year';
+        document.getElementById('labelBaseline').textContent    = 'Total cost without battery';
+        document.getElementById('sublabelBaseline').textContent = `over ${matchedDays.length} days · Mar 2026`;
+        document.getElementById('labelBattery').textContent     = 'Total cost with battery';
+        document.getElementById('sublabelBattery').textContent  = `${batteryKwh} kWh · ${chargePower} kW charger`;
+        document.getElementById('baselineCost').textContent     = '€' + totalBaseline.toFixed(2);
+        document.getElementById('batteryCost').textContent      = '€' + totalBattery.toFixed(2);
+        document.getElementById('saving').textContent           = '€' + totalSaving.toFixed(2);
+        document.getElementById('savingPct').textContent        = `${pct.toFixed(1)}% reduction over ${matchedDays.length} days`;
+        document.getElementById('statDailyKwh').textContent     = avgDailyKwh.toFixed(1) + ' kWh/day';
+        document.getElementById('statPeak').textContent         = peakKw.toFixed(2) + ' kW';
+        document.getElementById('statCoverageLabel').textContent = 'Avg daily saving';
+        document.getElementById('statCoverage').textContent     = '€' + avgDaily.toFixed(3);
+        document.getElementById('annualSaving').textContent     = '€' + (avgDaily * 365).toFixed(0) + '/year';
 
-        document.getElementById('consumptionChartLabel').textContent =
-          `Real savings per day · ${matchedDays.length} days of actual data matched with historical prices`;
+        // Battery recommendation
+        const opt = findOptimalBattery(
+          Object.fromEntries(matchedDays.map(d => [d, historicalPrices[d]])),
+          csvDayData, chargePower, efficiency
+        );
+        if (opt) {
+          const optSaving = opt.savings.find(s => s.cap === opt.recommended);
+          const maxSaving = opt.savings[opt.savings.length - 1];
+          const capturedPct = optSaving && maxSaving.avgDaily > 0
+            ? (optSaving.avgDaily / maxSaving.avgDaily * 100).toFixed(0) : '—';
+          document.getElementById('recommendationText').innerHTML =
+            `Based on your actual consumption pattern, a <strong>${opt.recommended} kWh battery</strong> captures ${capturedPct}% of the maximum possible savings. ` +
+            `Going larger gives diminishing returns — each extra kWh beyond this point adds less than 5% of what the previous kWh added. ` +
+            `With a ${opt.recommended} kWh battery you'd save approximately <strong>€${(optSaving.avgDaily * 365).toFixed(0)}/year</strong>.`;
+          document.getElementById('recommendation').classList.remove('hidden');
+        }
+
+        document.getElementById('chart2Title').textContent  = 'Savings per day (€) — actual consumption × actual Nordpool prices';
+        document.getElementById('chart2Label').textContent  = `Each bar = one day in March 2026. Taller bar = bigger price spread that day between cheap and expensive hours.`;
         drawSavingsChart(dailySavings);
 
-        // Also show today's price chart with avg profile
+        // Price chart with today's prices + avg profile for battery strategy visualisation
         const todayPrices = todayIntervals.map(iv => parseFloat(iv.price));
         const todayResult = calcDaySavings(todayPrices, avgProfile, batteryKwh, maxChargePerInterval, efficiency);
-        const chargingSet    = new Set(todayResult.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-        const dischargingSet = new Set(todayResult.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+        drawPriceChart(
+          new Set(todayResult.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0)),
+          new Set(todayResult.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0))
+        );
+
+      } else {
+        // === TODAY-ONLY MODE ===
+        const consumption = avgProfile || (() => {
+          const w = [0.3,0.3,0.2,0.2,0.2,0.2,0.2,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.7,0.7,0.8,0.9,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.5,2.5,2.4,2.3,2.2,2.1,2.0,1.9,1.8,1.6,1.4,1.2,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.4,0.4,0.4,0.3,0.3,0.3,0.3,0.3];
+          const t = w.reduce((a, b) => a + b, 0);
+          return w.map(v => (v / t) * 15);
+        })();
+
+        const prices = todayIntervals.map(iv => parseFloat(iv.price));
+        const res    = calcDaySavings(prices, consumption, batteryKwh, maxChargePerInterval, efficiency);
+        const pct    = res.baseline > 0 ? (res.saving / res.baseline * 100) : 0;
+        const dailyKwh = consumption.reduce((a, b) => a + b, 0);
+        const peakKw   = Math.max(...consumption) * 4;
+
+        document.getElementById('labelBaseline').textContent    = 'Cost without battery today';
+        document.getElementById('sublabelBaseline').textContent = 'paying grid price at every 15-min interval';
+        document.getElementById('labelBattery').textContent     = 'Cost with battery today';
+        document.getElementById('sublabelBattery').textContent  = `${batteryKwh} kWh battery · ${chargePower} kW charger`;
+        document.getElementById('baselineCost').textContent     = '€' + res.baseline.toFixed(2);
+        document.getElementById('batteryCost').textContent      = '€' + res.battery.toFixed(2);
+        document.getElementById('saving').textContent           = '€' + res.saving.toFixed(2);
+        document.getElementById('savingPct').textContent        = `${pct.toFixed(1)}% saved today`;
+        document.getElementById('statDailyKwh').textContent     = dailyKwh.toFixed(1) + ' kWh/day';
+        document.getElementById('statPeak').textContent         = peakKw.toFixed(2) + ' kW';
+        document.getElementById('statCoverageLabel').textContent = 'Data source';
+        document.getElementById('statCoverage').textContent     = avgProfile ? 'your CSV' : 'default profile';
+        document.getElementById('annualSaving').textContent     = '€' + (res.saving * 365).toFixed(0) + '/year*';
+        document.getElementById('recommendation').classList.add('hidden');
+
+        document.getElementById('chart2Title').textContent = 'Your consumption profile (kWh per 15-min slot)';
+        document.getElementById('chart2Label').textContent = avgProfile
+          ? 'Average across all days in your uploaded CSV — used to estimate when the battery charges and discharges'
+          : 'Default evening-peak profile (typical Lithuanian household) — upload your meter CSV for a personalised result';
+
+        const chargingSet    = new Set(res.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
+        const dischargingSet = new Set(res.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
         drawPriceChart(chargingSet, dischargingSet);
-        return;
+        drawConsumptionChart(consumption, chargingSet, dischargingSet);
       }
+    }
 
-      // --- Today-only mode (no CSV or no matching historical prices) ---
-      const consumption = avgProfile || (() => {
-        const w = [0.3,0.3,0.2,0.2,0.2,0.2,0.2,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.7,0.7,0.8,0.9,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.5,2.5,2.4,2.3,2.2,2.1,2.0,1.9,1.8,1.6,1.4,1.2,1.0,0.9,0.8,0.7,0.6,0.5,0.5,0.4,0.4,0.4,0.3,0.3,0.3,0.3,0.3];
-        const t = w.reduce((a, b) => a + b, 0);
-        return w.map(v => (v / t) * 15);
-      })();
-
-      const prices = todayIntervals.map(iv => parseFloat(iv.price));
-      const res = calcDaySavings(prices, consumption, batteryKwh, maxChargePerInterval, efficiency);
-      const pct = res.baseline > 0 ? (res.saving / res.baseline * 100) : 0;
-      const dailyKwh = consumption.reduce((a, b) => a + b, 0);
-      const peakKw   = Math.max(...consumption) * 4;
-
-      document.getElementById('baselineCost').textContent = '€' + res.baseline.toFixed(2);
-      document.getElementById('batteryCost').textContent  = '€' + res.battery.toFixed(2);
-      document.getElementById('saving').textContent       = '€' + res.saving.toFixed(2);
-      document.getElementById('savingPct').textContent    = pct.toFixed(1) + '% saved per day';
-      document.getElementById('statDailyKwh').textContent = dailyKwh.toFixed(1) + ' kWh';
-      document.getElementById('statPeak').textContent     = peakKw.toFixed(2) + ' kW';
-      document.getElementById('statCoverage').textContent = avgProfile ? 'from your CSV' : 'default profile';
-      document.getElementById('annualSaving').textContent = '€' + (res.saving * 365).toFixed(0) + '/year';
-
-      const chargingSet    = new Set(res.charge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-      const dischargingSet = new Set(res.discharge.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0));
-      drawPriceChart(chargingSet, dischargingSet);
-      drawConsumptionChart(consumption, chargingSet, dischargingSet);
+    function chartOptions(yCallback, tooltipCallback) {
+      return {
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: tooltipCallback } }
+        },
+        scales: {
+          x: {
+            ticks: {
+              font: { size: 10 },
+              maxRotation: 0,
+              autoSkip: false,
+              callback: (val, idx) => TIME_LABELS[idx] || null
+            },
+            grid: { display: false }
+          },
+          y: { ticks: { font: { size: 11 }, callback: yCallback }, grid: { color: '#f3f4f6' } }
+        }
+      };
     }
 
     function drawPriceChart(charging, discharging) {
-      const labels = todayIntervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
-      const prices = todayIntervals.map(iv => (parseFloat(iv.price) * 100).toFixed(2));
-      const colors = todayIntervals.map((_, i) => {
+      const prices = Array.from({length: 96}, (_, i) => {
+        const iv = todayIntervals[i];
+        return iv ? (parseFloat(iv.price) * 100).toFixed(2) : null;
+      });
+      const colors = Array.from({length: 96}, (_, i) => {
         if (charging.has(i))    return 'rgba(52, 211, 153, 0.85)';
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.85)';
         return 'rgba(165, 180, 252, 0.6)';
@@ -375,53 +482,44 @@
       if (priceChart) priceChart.destroy();
       priceChart = new Chart(document.getElementById('priceChart'), {
         type: 'bar',
-        data: { labels, datasets: [{ data: prices, backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
-        options: {
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + ' ct/kWh' } } },
-          scales: {
-            x: { ticks: { maxTicksLimit: 12, font: { size: 11 } }, grid: { display: false } },
-            y: { ticks: { font: { size: 11 }, callback: v => v + ' ct' }, grid: { color: '#f3f4f6' } }
-          }
-        }
-      });
-    }
-
-    function drawSavingsChart(dailySavings) {
-      const labels = dailySavings.map(d => d.day.slice(5)); // MM-DD
-      const data   = dailySavings.map(d => d.saving.toFixed(3));
-      const colors = dailySavings.map(d => d.saving >= 0 ? 'rgba(52, 211, 153, 0.8)' : 'rgba(248, 113, 113, 0.8)');
-      if (consumptionChart) consumptionChart.destroy();
-      consumptionChart = new Chart(document.getElementById('consumptionChart'), {
-        type: 'bar',
-        data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
-        options: {
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => '€' + ctx.parsed.y + ' saved' } } },
-          scales: {
-            x: { ticks: { maxTicksLimit: 16, font: { size: 11 } }, grid: { display: false } },
-            y: { ticks: { font: { size: 11 }, callback: v => '€' + v }, grid: { color: '#f3f4f6' } }
-          }
-        }
+        data: { labels: TIME_LABELS, datasets: [{ data: prices, backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
+        options: chartOptions(v => v + ' ct', ctx => ctx.parsed.y + ' ct/kWh · ' + (TIME_LABELS[ctx.dataIndex] || ''))
       });
     }
 
     function drawConsumptionChart(consumption, charging, discharging) {
-      const labels = todayIntervals.map(iv => (iv.startTimeLocal || iv.startTimeUTC || '').slice(11, 16));
       const colors = consumption.map((_, i) => {
         if (charging.has(i))    return 'rgba(52, 211, 153, 0.75)';
         if (discharging.has(i)) return 'rgba(248, 113, 113, 0.75)';
         return 'rgba(99, 102, 241, 0.5)';
       });
-      document.getElementById('consumptionChartLabel').textContent =
-        avgProfile ? 'Average consumption from uploaded CSV' : 'Default evening-peak profile — upload your CSV for accurate results';
       if (consumptionChart) consumptionChart.destroy();
       consumptionChart = new Chart(document.getElementById('consumptionChart'), {
         type: 'bar',
-        data: { labels, datasets: [{ data: consumption.map(v => v.toFixed(4)), backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
+        data: { labels: TIME_LABELS, datasets: [{ data: consumption.map(v => v.toFixed(4)), backgroundColor: colors, borderRadius: 2, borderSkipped: false }] },
+        options: chartOptions(v => v + ' kWh', ctx => ctx.parsed.y + ' kWh · ' + (TIME_LABELS[ctx.dataIndex] || ''))
+      });
+    }
+
+    function drawSavingsChart(dailySavings) {
+      const labels = dailySavings.map(d => d.day.slice(5));
+      const data   = dailySavings.map(d => d.saving.toFixed(3));
+      const colors = dailySavings.map(d => d.saving >= 0 ? 'rgba(52, 211, 153, 0.8)' : 'rgba(248, 113, 113, 0.8)');
+      if (consumptionChart) consumptionChart.destroy();
+      consumptionChart = new Chart(document.getElementById('consumptionChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 3, borderSkipped: false }] },
         options: {
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + ' kWh' } } },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => {
+              const d = dailySavings[ctx.dataIndex];
+              return [`Saving: €${parseFloat(ctx.parsed.y).toFixed(3)}`, `Without battery: €${d.baseline.toFixed(3)}`];
+            }}}
+          },
           scales: {
-            x: { ticks: { maxTicksLimit: 12, font: { size: 11 } }, grid: { display: false } },
-            y: { ticks: { font: { size: 11 }, callback: v => v + ' kWh' }, grid: { color: '#f3f4f6' } }
+            x: { ticks: { font: { size: 11 }, maxRotation: 45 }, grid: { display: false } },
+            y: { ticks: { font: { size: 11 }, callback: v => '€' + v }, grid: { color: '#f3f4f6' } }
           }
         }
       });
