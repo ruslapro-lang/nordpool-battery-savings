@@ -48,7 +48,7 @@
           Choose CSV file
           <input type="file" accept=".csv" class="hidden" onchange="loadCSV(this)" />
         </label>
-        <span id="csvStatus" class="text-sm text-gray-400">No file — calculations will use a typical household profile</span>
+        <span id="csvStatus" class="text-sm text-gray-400">No file selected — a typical household profile will be used instead</span>
       </div>
     </div>
 
@@ -228,6 +228,7 @@
       const file = input.files[0];
       if (!file) return;
       const status = document.getElementById('csvStatus');
+      status.className = 'text-sm text-indigo-500';
       status.textContent = 'Reading…';
       const reader = new FileReader();
       reader.onload = e => {
@@ -261,9 +262,11 @@
           avgProfile = slotSum.map((s, i) => slotCount[i] > 0 ? s / slotCount[i] : 0);
           const totalDays = Object.keys(csvDayData).length;
           const dailyKwh  = avgProfile.reduce((a, b) => a + b, 0).toFixed(1);
-          status.textContent = `✓ ${file.name} — ${totalDays} days, average ${dailyKwh} kWh/day`;
+          status.className = 'text-sm font-medium text-emerald-600';
+          status.textContent = `✓ Loaded ${totalDays} days · average ${dailyKwh} kWh/day`;
           tryShowResults();
         } catch (err) {
+          status.className = 'text-sm font-medium text-red-600';
           status.textContent = '✗ ' + err.message;
         }
       };
