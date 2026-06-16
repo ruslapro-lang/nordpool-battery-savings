@@ -39,7 +39,7 @@ jobs:
           import urllib.request, json, os, xml.etree.ElementTree as ET
           from datetime import date, timedelta
 
-          token     = os.environ["ENTSOE_TOKEN"]
+          token     = os.environ["ENTSOE_TOKEN"].strip().lstrip('﻿')
           date_from = os.environ["DATE_FROM"]
           date_to   = os.environ.get("DATE_TO") or date_from
           d, end    = date.fromisoformat(date_from), date.fromisoformat(date_to)
